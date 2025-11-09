@@ -30,7 +30,7 @@ const App: React.FC = () => {
       setAdImages(images);
     } catch (err) {
       console.error(err);
-      setError('حدث خطأ أثناء توليد الصور. يرجى المحاولة مرة أخرى.');
+      setError((err as Error).message || 'حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.');
     } finally {
       setIsLoading(false);
     }

@@ -1,11 +1,34 @@
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { AdImage } from '../types';
 
-if (!process.env.API_KEY) {
-  throw new Error("API_KEY environment variable not set");
-}
+let ai: GoogleGenAI | null = null;
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// This function fetches the API key, initializes the AI client, and caches it.
+const getAiClient = async (): Promise<GoogleGenAI> => {
+    if (ai) {
+        return ai;
+    }
+
+    try {
+        // Fetch the key from our Netlify serverless function
+        const response = await fetch('/.netlify/functions/get-api-key');
+        if (!response.ok) {
+            throw new Error(`Failed to fetch API key (status: ${response.status})`);
+        }
+        const { apiKey } = await response.json();
+        if (!apiKey) {
+            throw new Error("API key was not returned from the server.");
+        }
+        
+        // Initialize the client and cache it
+        ai = new GoogleGenAI({ apiKey });
+        return ai;
+    } catch (error) {
+        console.error("Error initializing GoogleGenAI client:", error);
+        throw new Error("لا يمكن تهيئة خدمة الذكاء الاصطناعي. يرجى التأكد من أن مفتاح API الخاص بك قد تم إعداده بشكل صحيح في Netlify.");
+    }
+};
+
 
 const fileToGenerativePart = async (file: File) => {
   const base64EncodedDataPromise = new Promise<string>((resolve) => {
@@ -22,6 +45,7 @@ const fileToGenerativePart = async (file: File) => {
  * Step 1: Generate dynamic, creative ad concepts based on the product image.
  */
 const generateAdConcepts = async (imagePart: { inlineData: { data: string; mimeType: string; } }): Promise<string[]> => {
+  const aiClient = await getAiClient();
   const model = 'gemini-2.5-flash';
   const prompt = `
     بصفتك مدير إبداعي خبير، قم بتحليل صورة المنتج هذه واقتراح 6 أفكار إعلانية مبتكرة وفريدة من نوعها.
@@ -43,7 +67,7 @@ const generateAdConcepts = async (imagePart: { inlineData: { data: string; mimeT
     required: ["prompts"]
   };
 
-  const response = await ai.models.generateContent({
+  const response = await aiClient.models.generateContent({
     model,
     contents: {
       parts: [imagePart, { text: prompt }],
@@ -62,6 +86,7 @@ const generateAdConcepts = async (imagePart: { inlineData: { data: string; mimeT
  * Step 2: Generate ad images based on the dynamically generated concepts.
  */
 export const generateAdImages = async (productImage: File): Promise<AdImage[]> => {
+  const aiClient = await getAiClient();
   const imagePart = await fileToGenerativePart(productImage);
 
   console.log("Generating ad concepts...");
@@ -71,7 +96,7 @@ export const generateAdImages = async (productImage: File): Promise<AdImage[]> =
   const generationPromises = adConcepts.map(async (prompt) => {
     try {
       console.log(`Generating image for prompt: "${prompt}"`);
-      const response = await ai.models.generateContent({
+      const response = await aiClient.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
           parts: [imagePart, { text: prompt }],
