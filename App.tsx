@@ -1,8 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import { AdImage } from './types';
+import { AdImage, AdIdea } from './types';
 import { generateAdImages } from './services/geminiService';
 import ImageUploader from './components/ImageUploader';
 import ImageCard from './components/ImageCard';
+import IdeaCard from './components/IdeaCard';
 import LoadingSpinner from './components/LoadingSpinner';
 import { SparklesIcon } from './components/icons/SparklesIcon';
 
@@ -10,6 +11,7 @@ const App: React.FC = () => {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [adImages, setAdImages] = useState<AdImage[]>([]);
+  const [adIdeas, setAdIdeas] = useState<AdIdea[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,6 +19,7 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     setAdImages([]);
+    setAdIdeas([]);
     setImageFile(file);
 
     const reader = new FileReader();
@@ -26,8 +29,9 @@ const App: React.FC = () => {
     reader.readAsDataURL(file);
 
     try {
-      const images = await generateAdImages(file);
+      const { images, ideas } = await generateAdImages(file);
       setAdImages(images);
+      setAdIdeas(ideas);
     } catch (err) {
       console.error(err);
       setError((err as Error).message || 'حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.');
@@ -40,6 +44,7 @@ const App: React.FC = () => {
     setImageFile(null);
     setImagePreviewUrl(null);
     setAdImages([]);
+    setAdIdeas([]);
     setError(null);
     setIsLoading(false);
   };
@@ -72,7 +77,7 @@ const App: React.FC = () => {
             {isLoading && (
                 <div className="text-center">
                     <LoadingSpinner />
-                    <p className="mt-4 text-lg text-cyan-300">جاري تحليل المنتج وتوليد الصور الإعلانية...</p>
+                    <p className="mt-4 text-lg text-cyan-300">جاري تحليل المنتج وتوليد النصوص الترويجية والصور الإعلانية...</p>
                 </div>
             )}
 
@@ -80,7 +85,21 @@ const App: React.FC = () => {
             
             {adImages.length > 0 && (
                 <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full mt-6 animate-fade-in">
+                    <div className="w-full text-center my-8 animate-fade-in">
+                      <h2 className="text-3xl font-bold text-cyan-400">نصوص ترويجية مقترحة</h2>
+                      <p className="text-gray-400 mt-2">انسخ هذه النصوص واستخدمها مباشرة في حملاتك على فيسبوك.</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full animate-fade-in">
+                        {adIdeas.map((idea, index) => (
+                            <IdeaCard key={index} title={idea.title} description={idea.description} />
+                        ))}
+                    </div>
+
+                    <div className="w-full text-center mt-12 mb-8 animate-fade-in">
+                      <h2 className="text-3xl font-bold text-cyan-400">الصور الإعلانية المولدة</h2>
+                      <p className="text-gray-400 mt-2">صور جاهزة للاستخدام في إعلاناتك.</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full animate-fade-in">
                         {adImages.map((image, index) => (
                             <ImageCard key={index} src={image.src} prompt={image.prompt} />
                         ))}

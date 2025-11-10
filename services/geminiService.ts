@@ -1,33 +1,15 @@
 import { GoogleGenAI, Modality, Type } from '@google/genai';
-import { AdImage } from '../types';
+import { AdImage, AdIdea } from '../types';
 
-let ai: GoogleGenAI | null = null;
+// The user is expected to set up the API_KEY as an environment variable.
+// Throwing an error here during initialization is good practice for developers.
+if (!process.env.API_KEY) {
+  throw new Error("The API_KEY environment variable is not set.");
+}
 
-// This function fetches the API key, initializes the AI client, and caches it.
-const getAiClient = async (): Promise<GoogleGenAI> => {
-    if (ai) {
-        return ai;
-    }
-
-    try {
-        // Fetch the key from our Netlify serverless function
-        const response = await fetch('/.netlify/functions/get-api-key');
-        if (!response.ok) {
-            throw new Error(`Failed to fetch API key (status: ${response.status})`);
-        }
-        const { apiKey } = await response.json();
-        if (!apiKey) {
-            throw new Error("API key was not returned from the server.");
-        }
-        
-        // Initialize the client and cache it
-        ai = new GoogleGenAI({ apiKey });
-        return ai;
-    } catch (error) {
-        console.error("Error initializing GoogleGenAI client:", error);
-        throw new Error("لا يمكن تهيئة خدمة الذكاء الاصطناعي. يرجى التأكد من أن مفتاح API الخاص بك قد تم إعداده بشكل صحيح في Netlify.");
-    }
-};
+// Initialize the GoogleGenAI client directly using the environment variable.
+// This removes the need for a separate serverless function to fetch the key.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 
 const fileToGenerativePart = async (file: File) => {
@@ -44,59 +26,85 @@ const fileToGenerativePart = async (file: File) => {
 /**
  * Step 1: Generate dynamic, creative ad concepts based on the product image.
  */
-const generateAdConcepts = async (imagePart: { inlineData: { data: string; mimeType: string; } }): Promise<string[]> => {
-  const aiClient = await getAiClient();
+const generateAdConcepts = async (imagePart: { inlineData: { data: string; mimeType: string; } }): Promise<AdIdea[]> => {
   const model = 'gemini-2.5-flash';
   const prompt = `
-    بصفتك مدير إبداعي خبير، قم بتحليل صورة المنتج هذه واقتراح 6 أفكار إعلانية مبتكرة وفريدة من نوعها.
-    يجب أن تكون كل فكرة مختلفة تمامًا عن الأخرى، وتغطي سيناريوهات متنوعة (مثل الفخامة، الاستخدام اليومي، الفن التجريدي، الطبيعة، إلخ).
-    قدم الأفكار كنصوص توجيهية (prompts) مباشرة يمكن استخدامها لتوليد صور.
+    بصفتك مدير إبداعي وخبير تسويق رقمي، قم بتحليل صورة المنتج هذه وابتكر 6 حملات إعلانية متكاملة ومختلفة.
+
+    لكل حملة من الحملات الست، أريدك أن تقدم ثلاثة عناصر:
+    1.  **عنوان (title):** عنوان جذاب يصف الحملة أو الجمهور المستهدف.
+    2.  **نص إعلاني (description):** نص كامل ومقنع لمنشور على فيسبوك، يستهدف شريحة معينة من الجمهور (مثل الشباب، محبي الفخامة، الباحثين عن الراحة، إلخ). يجب أن تكون النصوص متنوعة ومبتكرة.
+    3.  **وصف صورة (imagePrompt):** وصف مرئي ومفصل **لتوليد صورة إعلانية** لهذه الحملة. يجب أن يكون هذا الوصف مخصصًا لتوجيه نموذج توليد الصور، **ويجب ألا يحتوي على أي نص مكتوب**. ركز على تكوين الصورة، الألوان، الإضاءة، والمشاعر التي تثيرها. اجعل أوصاف الصور متنوعة جدًا (مثلاً: صورة للمنتج في بيئة طبيعية، صورة مقربة تبرز التفاصيل، صورة للمنتج أثناء الاستخدام في سياق حيوي، لقطة فنية تجريدية).
+
+    الهدف هو الحصول على 6 أفكار إعلانية فريدة، كل فكرة لها نصها الإعلاني الخاص وصورتها المميزة التي لا تشبه الأخرى.
+
+    **مهم جدًا:** أوصاف الصور (imagePrompt) يجب أن تكون باللغة العربية وتصف المشهد المرئي فقط، مع التأكيد على **عدم كتابة أي نصوص أو شعارات داخل الصورة**.
   `;
   
   const responseSchema = {
     type: Type.OBJECT,
     properties: {
-      prompts: {
+      ideas: {
         type: Type.ARRAY,
         items: {
-          type: Type.STRING,
+          type: Type.OBJECT,
+          properties: {
+            title: {
+              type: Type.STRING,
+              description: "عنوان جذاب يصف الحملة أو الجمهور المستهدف."
+            },
+            description: {
+              type: Type.STRING,
+              description: "النص الكامل للبوست الإعلاني الجاهز للنشر على فيسبوك."
+            },
+            imagePrompt: {
+              type: Type.STRING,
+              description: "وصف مرئي ومفصل لتوليد صورة إعلانية، مع التأكيد على عدم وجود أي نص في الصورة."
+            }
+          },
+          required: ["title", "description", "imagePrompt"]
         },
-        description: "قائمة من 6 نصوص توجيهية لتوليد الصور الإعلانية."
+        description: "قائمة من 6 حملات إعلانية متكاملة."
       }
     },
-    required: ["prompts"]
+    required: ["ideas"]
   };
+  
+  try {
+    const response = await ai.models.generateContent({
+      model,
+      contents: {
+        parts: [imagePart, { text: prompt }],
+      },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema,
+      },
+    });
 
-  const response = await aiClient.models.generateContent({
-    model,
-    contents: {
-      parts: [imagePart, { text: prompt }],
-    },
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: responseSchema,
-    },
-  });
-
-  const jsonResponse = JSON.parse(response.text);
-  return jsonResponse.prompts;
+    const jsonResponse = JSON.parse(response.text);
+    return jsonResponse.ideas;
+  } catch (error) {
+      console.error("Error in generateAdConcepts:", error);
+      throw new Error("فشل توليد النصوص الترويجية. قد تكون هناك مشكلة في الاتصال بالخدمة أو أن مفتاح API غير صالح.");
+  }
 };
 
 /**
  * Step 2: Generate ad images based on the dynamically generated concepts.
  */
-export const generateAdImages = async (productImage: File): Promise<AdImage[]> => {
-  const aiClient = await getAiClient();
+export const generateAdImages = async (productImage: File): Promise<{ images: AdImage[], ideas: AdIdea[] }> => {
   const imagePart = await fileToGenerativePart(productImage);
 
   console.log("Generating ad concepts...");
-  const adConcepts = await generateAdConcepts(imagePart);
-  console.log("Generated concepts:", adConcepts);
+  const adIdeas = await generateAdConcepts(imagePart);
+  console.log("Generated concepts:", adIdeas);
 
-  const generationPromises = adConcepts.map(async (prompt) => {
+  const generationPromises = adIdeas.map(async (idea) => {
     try {
+      const prompt = idea.imagePrompt; // Use the dedicated image prompt
       console.log(`Generating image for prompt: "${prompt}"`);
-      const response = await aiClient.models.generateContent({
+      const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
           parts: [imagePart, { text: prompt }],
@@ -105,17 +113,26 @@ export const generateAdImages = async (productImage: File): Promise<AdImage[]> =
           responseModalities: [Modality.IMAGE],
         },
       });
-
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          const base64ImageBytes: string = part.inlineData.data;
-          const imageUrl = `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
-          return { src: imageUrl, prompt: prompt };
+      
+      const candidate = response?.candidates?.[0];
+      if (candidate?.content?.parts) {
+        for (const part of candidate.content.parts) {
+          if (part.inlineData) {
+            const base64ImageBytes: string = part.inlineData.data;
+            const imageUrl = `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
+            return { src: imageUrl, prompt: prompt };
+          }
         }
       }
+      
+      // If we reach here, no image was found or the response was blocked.
+      const finishReason = candidate?.finishReason;
+      const safetyRatings = candidate?.safetyRatings;
+      console.warn(`Image generation failed for prompt: "${prompt}". Reason: ${finishReason}`, { safetyRatings });
       throw new Error(`No image data found for prompt: ${prompt}`);
+
     } catch(e) {
-      console.error(`Failed to generate image for prompt: "${prompt}"`, e);
+      console.error(`Failed to generate image for prompt: "${idea.imagePrompt}"`, e);
       return null;
     }
   });
@@ -125,8 +142,8 @@ export const generateAdImages = async (productImage: File): Promise<AdImage[]> =
   const successfulResults = results.filter(result => result !== null) as AdImage[];
   
   if (successfulResults.length === 0) {
-      throw new Error("All image generation attempts failed.");
+      throw new Error("فشل توليد جميع الصور. قد تكون هناك مشكلة في الخدمة أو أن المحتوى غير مسموح به. يرجى المحاولة مرة أخرى لاحقًا.");
   }
   
-  return successfulResults;
+  return { images: successfulResults, ideas: adIdeas };
 };

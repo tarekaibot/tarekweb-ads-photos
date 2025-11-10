@@ -3,8 +3,8 @@ export interface AdImage {
   prompt: string;
 }
 
-// Fix: Add AdIdea interface to resolve import error in IdeaCard.tsx.
 export interface AdIdea {
   title: string;
-  description: string;
+  description: string; // This will hold the ad copy
+  imagePrompt: string; // This is the new field for image generation
 }
